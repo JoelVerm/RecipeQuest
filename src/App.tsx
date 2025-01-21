@@ -1,4 +1,4 @@
-import {Component, createEffect, createResource, createSignal, Index} from 'solid-js'
+import {Component, createEffect, createResource, createSignal, For, Index, JSX, Show} from 'solid-js'
 import {parse} from 'yaml'
 import tavernImg from './assets/tavern.jpg'
 import woodImg from './assets/wood.jpg'
@@ -13,8 +13,10 @@ interface Recipe {
     materials?: string[];
     ingredients: { [key: string]: number | string };
     seasonings: string[];
-    steps: { [key: string]: (NormalStep | GotoStep)[] };
+    steps: { [key: string]: Step[] };
 }
+
+type Step = NormalStep | GotoStep
 
 interface Info {
     name: string;
@@ -30,17 +32,21 @@ interface NormalStep {
     minutes?: number;
 }
 
+const isNormalStep = (step: Step | undefined): step is NormalStep => (step as NormalStep | undefined)?.text !== undefined
+
 interface GotoStep {
     goto: string;
 }
 
+const isGotoStep = (step: Step | undefined): step is GotoStep => (step as GotoStep | undefined)?.goto !== undefined
+
 const App: Component = () => {
-    let [recipe_files] = createResource(
+    const [recipe_files] = createResource(
         () => fetch('https://api.github.com/repos/joelverm/recipequest-repo/contents/')
             .then(res => res.json() as Promise<RecipeFile[]>)
             .then(files => files.filter(file => file.name.endsWith('.yaml')))
     )
-    let [selectedRecipe, setSelectedRecipe] = createSignal<number | undefined>()
+    const [selectedRecipe, setSelectedRecipe] = createSignal<number | undefined>()
 
     return (
         <div class="h-full w-full" style={{'background-image': `url(${tavernImg})`}}>
@@ -52,7 +58,7 @@ const App: Component = () => {
 }
 
 function pseudoRandom(seed: number, size: number) {
-    let x = Math.sin(seed) * size
+    const x = Math.sin(seed) * size
     return x - Math.floor(x)
 }
 
@@ -64,9 +70,11 @@ const colours: [string, string][] = [
     ['#d77643', '#be4a2f'],
     ['#0099db', '#124e89'],
     ['#e43b44', '#a22633'],
+    ['#feae34', '#f77622'],
+    ['#b55088', '#68386c'],
 ]
 
-const getColour = (index: number) => colours[Math.floor(pseudoRandom(index + 15, 13000) * colours.length)]
+const getColour = (index: number) => colours[Math.floor(pseudoRandom(index + 14, 17000) * colours.length)]
 
 const BookStack: Component<{ recipes: RecipeFile[], select: (index: number) => void }> = (props) => {
     return (
@@ -76,7 +84,7 @@ const BookStack: Component<{ recipes: RecipeFile[], select: (index: number) => v
                 <Index each={props.recipes}>
                     {(recipe, index) => {
                         const size = 20
-                        const margin = pseudoRandom(index + 11, 10000) * size
+                        const margin = pseudoRandom(index + 9, 10000) * size
                         const colour = getColour(index)
                         return (<button
                             class="rounded p-1.5 block"
@@ -98,16 +106,82 @@ const BookStack: Component<{ recipes: RecipeFile[], select: (index: number) => v
     )
 }
 
+interface TimeFrameTree {
+    root: Step[]
+    children: TimeFrameTree[]
+}
+
+type TimeFrame = NormalStep[]
+
+const createTimeFrames = (recipe: Recipe): TimeFrame[] => {
+    const createTree = (name: string, steps: Step[]): TimeFrameTree | undefined => {
+        const step = steps[0]
+        if (!isNormalStep(step)) {
+            console.error(`Step ${name} does not start with a normal step`)
+            return undefined
+        }
+        let fromRefChildren = step.from ?? []
+        let gotoRefChildren = Object.entries(recipe.steps).filter(
+            ([_key, value]) => isGotoStep(value.at(-1)) && (value.at(-1) as GotoStep).goto === name)
+        if (gotoRefChildren.map(([key, _value]) => key).toSorted().join('___') !== fromRefChildren.toSorted().join('___')) {
+            console.error(`Step ${name} has mismatching goto and from references`)
+            return undefined
+        }
+        return {
+            root: steps,
+            children: gotoRefChildren.map(([key, value]) => createTree(key, value)).filter((x): x is TimeFrameTree => x !== undefined)
+        }
+    }
+    const walkTree = (trees: TimeFrameTree[]) => {
+        const reversedTimeFrames: { [key: number]: NormalStep[] } = {}
+        for (const tree of trees) {
+            let currentTime = 0
+            for (const step of tree.root.toReversed()) {
+                if (isNormalStep(step)) {
+                    currentTime += step.minutes ?? 0
+                    currentTime += 1
+                    if (reversedTimeFrames[currentTime] === undefined) {
+                        reversedTimeFrames[currentTime] = []
+                    }
+                    reversedTimeFrames[currentTime].push(step)
+                }
+            }
+            const innerTimeFrames = walkTree(tree.children)
+            for (const [time, timeFrame] of Object.entries(innerTimeFrames)) {
+                const ourTime = currentTime + parseInt(time)
+                if (reversedTimeFrames[ourTime] === undefined) {
+                    reversedTimeFrames[ourTime] = []
+                }
+                reversedTimeFrames[ourTime].push(...timeFrame)
+            }
+        }
+        return reversedTimeFrames
+    }
+    const createCorrectTimeFrames = (reversedTimeFrames: { [key: number]: NormalStep[] }) =>
+        Object.entries(reversedTimeFrames)
+            .toSorted(([timeA], [timeB]) => parseInt(timeB) - parseInt(timeA))
+            .map(([_time, timeFrame]) => timeFrame)
+    const tree = Object.entries(recipe.steps)
+        .filter(([_key, value]) => isNormalStep(value.at(-1)))
+        .map(([key, value]) => createTree(key, value))
+        .filter((x): x is TimeFrameTree => x !== undefined)
+    const reversedTimeFrames = walkTree(tree)
+    return createCorrectTimeFrames(reversedTimeFrames)
+}
+
 const SingleBook: Component<{ recipe?: RecipeFile, index?: number, back: () => void }> = (props) => {
-    let [lastRecipe] = createResource(() => props.recipe,
+    const [lastRecipe] = createResource(() => props.recipe,
         (recipe) => fetch(recipe.download_url)
             .then(res => res.text())
             .then(text => parse(text) as Recipe)
     )
-    let recipe = () => props.recipe == undefined ? undefined : lastRecipe()
-    let [colour, setColour] = createSignal(getColour(0))
+    const recipe = () => props.recipe == undefined ? undefined : lastRecipe()
+    const recipeTimeFrames = () => recipe() == undefined ? [] : createTimeFrames(recipe()!)
+    const [colour, setColour] = createSignal(getColour(0))
+    const [selectedPage, setSelectedPage] = createSignal(0)
     createEffect(() => {
         if (props.index != undefined) {
+            setSelectedPage(0)
             setColour(getColour(props.index))
         }
     })
@@ -121,16 +195,89 @@ const SingleBook: Component<{ recipe?: RecipeFile, index?: number, back: () => v
         >
             <button class="hidden" onClick={props.back}>Back</button>
             <div
-                class="relative h-[80%] w-[600px] max-w-[95dvw] rounded top-[50%] left-0 translate-y-[-50%] py-4 pe-4 cursor-default"
+                class="relative h-[80%] w-[600px] max-w-[95dvw] rounded top-[50%] left-0 translate-y-[-50%] py-4 pe-4 grid grid-rows-1 grid-cols-1 cursor-default"
                 style={{
                     'background': `linear-gradient(225deg, ${colour()[0]} 20%, ${colour()[1]} 80%)`,
                 }}
                 onClick={(e) => e.stopPropagation()}
             >
-                <div class="w-full h-full bg-amber-100 rounded p-1 ps-3"
-                     style={{'font-family': '"Merriweather", serif'}}>
-                    <h1>{recipe()?.info.name}</h1>
-                </div>
+                <BookPage page={0} selected={selectedPage()} forward={() => setSelectedPage(1)}>
+                    <h1 class="text-xl">{recipe()?.info.name}</h1>
+                    <p>{recipe()?.info.description}<br/>- {recipe()?.info.author}</p>
+                    <Show when={recipe()?.info.image}>
+                        {image => <img src={image()} alt="recipe" class="w-full h-40 object-cover"/>}
+                    </Show>
+                    <Show when={recipe()?.materials?.length ?? 0 > 0}>
+                        <h2 class="text-lg">Materials:</h2>
+                        <p>{recipe()?.materials?.join(', ')}</p>
+                    </Show>
+                    <h2 class="text-lg">Ingredients:</h2>
+                    <ul>
+                        <For each={Object.entries(recipe()?.ingredients ?? {})}
+                             fallback={<li>None</li>}>
+                            {([ingredient, amount]) => (
+                                <li>{ingredient}: {amount}</li>
+                            )}
+                        </For>
+                    </ul>
+                    <Show when={recipe()?.seasonings.length ?? 0 > 0}>
+                        <h2 class="text-lg">Seasonings:</h2>
+                        <p>{recipe()?.seasonings.join(', ')}</p>
+                    </Show>
+                </BookPage>
+                <Index each={recipeTimeFrames()}>
+                    {(timeFrame, index) => (
+                        <BookPage page={index + 1} selected={selectedPage()} back={() => setSelectedPage(index)}
+                                  forward={() => setSelectedPage(index + 2)}>
+                            <Index each={timeFrame()}>
+                                {(step) => (
+                                    <div>
+                                        <h1 class="text-xl">{capitalize(step().text)}</h1>
+                                        <p>{[...step().from ?? [], ...step().ingredients ?? []].join(', ')}</p>
+                                        <Show when={step().minutes ?? 0 > 0}>
+                                            <p>Takes {step().minutes} minutes</p>
+                                        </Show>
+                                    </div>
+                                )}
+                            </Index>
+                        </BookPage>
+                    )}
+                </Index>
+                <BookPage page={recipeTimeFrames().length + 1} selected={selectedPage()}
+                          back={() => setSelectedPage(recipeTimeFrames().length - 1)}>
+                    <h1 class="text-xl">Done!</h1>
+                </BookPage>
+            </div>
+        </div>
+    )
+}
+
+const BookPage: Component<{
+    page: number,
+    selected: number,
+    back?: () => void,
+    forward?: () => void,
+    children: JSX.Element
+}> = (props) => {
+    return (
+        <div
+            class="w-full h-full row-start-1 row-end-1 col-start-1 col-end-1 flex flex-col gap-2 rounded p-3 ps-5 transition-[margin-left] duration-500"
+            style={{
+                'font-family': '"Merriweather", serif',
+                'z-index': 1000 - props.page,
+                'margin-left': (props.selected <= props.page ? 0 : -100) + '%',
+                'background': `linear-gradient(225deg, #fef3c7 10%, #fde68a 90%)`
+            }}>
+            {props.children}
+            <div class="flex-1"></div>
+            <div class="flex flex-row">
+                <Show when={props.back}>
+                    {back => <button class="text-4xl" onClick={back()}>⇐</button>}
+                </Show>
+                <div class="flex-1"></div>
+                <Show when={props.forward}>
+                    {forward => <button class="text-4xl" onClick={forward()}>⇒</button>}
+                </Show>
             </div>
         </div>
     )
