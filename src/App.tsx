@@ -123,11 +123,17 @@ const BookStack: Component<{ recipes: RecipeFile[], select: (index: number) => v
 }
 
 interface TimeFrameTree {
+    name: string
     root: Step[]
     children: TimeFrameTree[]
 }
 
-type TimeFrame = NormalStep[]
+interface TimeFrameStep {
+    timeLine: string
+    step?: NormalStep
+}
+
+type TimeFrame = TimeFrameStep[]
 
 const createTimeFrames = (recipe: Recipe): TimeFrame[] => {
     const createTree = (name: string, steps: Step[]): TimeFrameTree | undefined => {
@@ -144,45 +150,55 @@ const createTimeFrames = (recipe: Recipe): TimeFrame[] => {
             return undefined
         }
         return {
+            name,
             root: steps,
             children: gotoRefChildren.map(([key, value]) => createTree(key, value)).filter((x): x is TimeFrameTree => x !== undefined)
         }
     }
     const walkTree = (trees: TimeFrameTree[]) => {
-        const reversedTimeFrames: { [key: number]: NormalStep[] } = {}
+        const reversedTimeFrames: TimeFrameStep[][] = [[]]
         for (const tree of trees) {
             let currentTime = 0
             for (const step of tree.root.toReversed()) {
                 if (isNormalStep(step)) {
-                    currentTime += step.minutes ?? 0
-                    currentTime += 1
+                    const oldTime = currentTime
+                    currentTime += (step.minutes ?? 0) + 1
+                    for (let i = oldTime + 1; i < currentTime; i++) {
+                        if (reversedTimeFrames[i] === undefined) {
+                            reversedTimeFrames[i] = []
+                        }
+                        reversedTimeFrames[i].push({
+                            timeLine: tree.name
+                        })
+                    }
                     if (reversedTimeFrames[currentTime] === undefined) {
                         reversedTimeFrames[currentTime] = []
                     }
-                    reversedTimeFrames[currentTime].push(step)
+                    reversedTimeFrames[currentTime].push({
+                        timeLine: tree.name,
+                        step: step
+                    })
                 }
             }
-            const innerTimeFrames = walkTree(tree.children)
-            for (const [time, timeFrame] of Object.entries(innerTimeFrames)) {
-                const ourTime = currentTime + parseInt(time)
-                if (reversedTimeFrames[ourTime] === undefined) {
-                    reversedTimeFrames[ourTime] = []
+            for (const v of walkTree(tree.children).entries()) {
+                const i = v[0]
+                const item = v[1]
+                if (reversedTimeFrames[currentTime + i] === undefined) {
+                    reversedTimeFrames[currentTime + i] = []
                 }
-                reversedTimeFrames[ourTime].push(...timeFrame)
+                reversedTimeFrames[currentTime + i].push(...item)
             }
         }
         return reversedTimeFrames
     }
-    const createCorrectTimeFrames = (reversedTimeFrames: { [key: number]: NormalStep[] }) =>
-        Object.entries(reversedTimeFrames)
-            .toSorted(([timeA], [timeB]) => parseInt(timeB) - parseInt(timeA))
-            .map(([_time, timeFrame]) => timeFrame)
     const tree = Object.entries(recipe.steps)
         .filter(([_key, value]) => isNormalStep(value.at(-1)))
         .map(([key, value]) => createTree(key, value))
         .filter((x): x is TimeFrameTree => x !== undefined)
     const reversedTimeFrames = walkTree(tree)
-    return createCorrectTimeFrames(reversedTimeFrames)
+    return reversedTimeFrames
+        .toReversed()
+        .filter((x) => x.some(i => i.step != undefined))
 }
 
 const SingleBook: Component<{ recipe?: RecipeFile, index?: number, back: () => void }> = (props) => {
@@ -247,11 +263,17 @@ const SingleBook: Component<{ recipe?: RecipeFile, index?: number, back: () => v
                                   forward={() => setSelectedPage(index + 2)}>
                             <Index each={timeFrame()}>
                                 {(step) => (
-                                    <div>
-                                        <h1 class="text-xl">{capitalize(step().text)}</h1>
-                                        <p>{[...step().from ?? [], ...step().ingredients ?? []].join(', ')}</p>
-                                        <Show when={step().minutes ?? 0 > 0}>
-                                            <p>Takes {step().minutes} minutes</p>
+                                    <div class="border-b border-black pb-1">
+                                        <h1 class="text-xl">{capitalize(step().timeLine)} {step().step ? `- ${capitalize(step().step!.text)}` : ''}</h1>
+                                        <Show when={step().step}>
+                                            {step =>
+                                                <>
+                                                    <p>{[...step().from ?? [], ...step().ingredients ?? []].join(', ')}</p>
+                                                    <Show when={step().minutes ?? 0 > 0} fallback={<p>&nbsp;</p>}>
+                                                        <p>Takes {step().minutes} minutes</p>
+                                                    </Show>
+                                                </>
+                                            }
                                         </Show>
                                     </div>
                                 )}
@@ -294,7 +316,7 @@ const BookPage: Component<{
                 'box-shadow': '0px 0px 4px 0.5px var(--anim-color)',
             }}>
             <div class="flex-1 overflow-y-auto">
-                <div class={'grid h-min gap-2' + (props.collapse ?? false ? 'auto-rows-fr' : '')}>
+                <div class={'grid h-min gap-2 ' + (props.collapse ? '' : 'auto-rows-fr')}>
                     {props.children}
                 </div>
             </div>
