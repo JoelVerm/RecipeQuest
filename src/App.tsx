@@ -46,11 +46,27 @@ const App: Component = () => {
             .then(res => res.json() as Promise<RecipeFile[]>)
             .then(files => files.filter(file => file.name.endsWith('.yaml')))
     )
-    const [selectedRecipe, setSelectedRecipe] = createSignal<number | undefined>()
+    const [selectedRecipe, _setSelectedRecipe] = createSignal<number | undefined>()
+    createEffect(() => {
+        let files = recipe_files()
+        if (files != undefined) {
+            let hash = decodeURI(window.location.hash)
+            if (hash.length > 1) {
+                let index = files.findIndex(file => file.name === hash.slice(1) + '.yaml')
+                if (index >= 0) {
+                    setSelectedRecipe(index)
+                }
+            }
+        }
+    })
+    const setSelectedRecipe = (index: number | undefined) => {
+        window.location.hash = recipe_files()?.[index as number]?.name.replace('.yaml', '') ?? ''
+        _setSelectedRecipe(index)
+    }
 
     return (
         <div class="h-full w-full" style={{'background-image': `url(${tavernImg})`, 'background-position': 'center'}}>
-            <BookStack recipes={recipe_files() ?? []} select={(i) => setSelectedRecipe(i)}/>
+            <BookStack recipes={recipe_files() ?? []} select={setSelectedRecipe}/>
             <SingleBook recipe={recipe_files()?.[selectedRecipe() as number]} index={selectedRecipe()}
                         back={() => setSelectedRecipe(undefined)}/>
         </div>
@@ -201,7 +217,7 @@ const SingleBook: Component<{ recipe?: RecipeFile, index?: number, back: () => v
                 }}
                 onClick={(e) => e.stopPropagation()}
             >
-                <BookPage page={0} selected={selectedPage()} forward={() => setSelectedPage(1)}>
+                <BookPage page={0} selected={selectedPage()} forward={() => setSelectedPage(1)} collapse={true}>
                     <h1 class="text-xl">{recipe()?.info.name}</h1>
                     <p>{recipe()?.info.description}<br/>- {recipe()?.info.author}</p>
                     <Show when={recipe()?.info.image}>
@@ -257,6 +273,7 @@ const BookPage: Component<{
     selected: number,
     back?: () => void,
     forward?: () => void,
+    collapse?: boolean,
     children: JSX.Element
 }> = (props) => {
     const on = () => props.selected <= props.page
@@ -276,8 +293,11 @@ const BookPage: Component<{
                 '--anim-color': on() ? '#3b2f0c30' : '#3b2f0caa',
                 'box-shadow': '0px 0px 4px 0.5px var(--anim-color)',
             }}>
-            {props.children}
-            <div class="flex-1"></div>
+            <div class="flex-1 overflow-y-auto">
+                <div class={'grid h-min gap-2' + (props.collapse ?? false ? 'auto-rows-fr' : '')}>
+                    {props.children}
+                </div>
+            </div>
             <div class="flex flex-row">
                 <Show when={props.back} fallback={<div class="flex-1"></div>}>
                     {back => <button class="text-4xl flex-1 text-left" onClick={back()}>⇐</button>}
