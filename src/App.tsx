@@ -49,7 +49,7 @@ const App: Component = () => {
     const [selectedRecipe, setSelectedRecipe] = createSignal<number | undefined>()
 
     return (
-        <div class="h-full w-full" style={{'background-image': `url(${tavernImg})`}}>
+        <div class="h-full w-full" style={{'background-image': `url(${tavernImg})`, 'background-position': 'center'}}>
             <BookStack recipes={recipe_files() ?? []} select={(i) => setSelectedRecipe(i)}/>
             <SingleBook recipe={recipe_files()?.[selectedRecipe() as number]} index={selectedRecipe()}
                         back={() => setSelectedRecipe(undefined)}/>
@@ -170,12 +170,11 @@ const createTimeFrames = (recipe: Recipe): TimeFrame[] => {
 }
 
 const SingleBook: Component<{ recipe?: RecipeFile, index?: number, back: () => void }> = (props) => {
-    const [lastRecipe] = createResource(() => props.recipe,
+    const [recipe] = createResource(() => props.recipe,
         (recipe) => fetch(recipe.download_url)
             .then(res => res.text())
             .then(text => parse(text) as Recipe)
     )
-    const recipe = () => props.recipe == undefined ? undefined : lastRecipe()
     const recipeTimeFrames = () => recipe() == undefined ? [] : createTimeFrames(recipe()!)
     const [colour, setColour] = createSignal(getColour(0))
     const [selectedPage, setSelectedPage] = createSignal(0)
@@ -189,7 +188,7 @@ const SingleBook: Component<{ recipe?: RecipeFile, index?: number, back: () => v
         <div
             class="absolute h-dvh w-dvw top-0 transition-[left] duration-500 cursor-pointer"
             style={{
-                'left': recipe() == undefined ? '-101dvw' : '-5px',
+                'left': props.recipe == undefined ? '-101dvw' : '-5px',
             }}
             onClick={props.back}
         >
@@ -198,6 +197,7 @@ const SingleBook: Component<{ recipe?: RecipeFile, index?: number, back: () => v
                 class="relative h-[80%] w-[600px] max-w-[95dvw] rounded top-[50%] left-0 translate-y-[-50%] py-4 pe-4 grid grid-rows-1 grid-cols-1 cursor-default"
                 style={{
                     'background': `linear-gradient(225deg, ${colour()[0]} 20%, ${colour()[1]} 80%)`,
+                    'box-shadow': '0px 0px 8px 2px #3b2f0c70'
                 }}
                 onClick={(e) => e.stopPropagation()}
             >
@@ -259,24 +259,31 @@ const BookPage: Component<{
     forward?: () => void,
     children: JSX.Element
 }> = (props) => {
+    const on = () => props.selected <= props.page
     return (
         <div
-            class="w-full h-full row-start-1 row-end-1 col-start-1 col-end-1 flex flex-col gap-2 rounded p-3 ps-5 transition-[margin-left] duration-500"
+            class="w-full h-full row-start-1 row-end-1 col-start-1 col-end-1 flex flex-col gap-2 rounded p-3 ps-5 duration-500 gradient"
             style={{
                 'font-family': '"Merriweather", serif',
                 'z-index': 1000 - props.page,
-                'margin-left': (props.selected <= props.page ? 0 : -100) + '%',
-                'background': `linear-gradient(225deg, #fef3c7 10%, #fde68a 90%)`
+                'margin-left': (on() ? 0 : -100) + '%',
+                '--g-angle': on() ? '225deg' : '270deg',
+                '--g-from-color': '#fef3c7',
+                '--g-to-color': '#bb9f5c',
+                '--g-from-percent': '10%',
+                '--g-to-percent': on() ? '90%' : '30%',
+                '--transition': 'margin-left 0.5s, --anim-color 0.5s',
+                '--anim-color': on() ? '#3b2f0c30' : '#3b2f0caa',
+                'box-shadow': '0px 0px 4px 0.5px var(--anim-color)',
             }}>
             {props.children}
             <div class="flex-1"></div>
             <div class="flex flex-row">
-                <Show when={props.back}>
-                    {back => <button class="text-4xl" onClick={back()}>⇐</button>}
+                <Show when={props.back} fallback={<div class="flex-1"></div>}>
+                    {back => <button class="text-4xl flex-1 text-left" onClick={back()}>⇐</button>}
                 </Show>
-                <div class="flex-1"></div>
-                <Show when={props.forward}>
-                    {forward => <button class="text-4xl" onClick={forward()}>⇒</button>}
+                <Show when={props.forward} fallback={<div class="flex-1"></div>}>
+                    {forward => <button class="text-4xl flex-1 text-right" onClick={forward()}>⇒</button>}
                 </Show>
             </div>
         </div>

@@ -3,3 +3,77 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+@property --g-angle {
+    syntax: '<angle>';
+    inherits: false;
+    initial-value: 90deg;
+}
+
+@property --g-from-color {
+    syntax: '<color>';
+    inherits: false;
+    initial-value: #f6f6f6;
+}
+
+@property --g-to-color {
+    syntax: '<color>';
+    inherits: false;
+    initial-value: #f6f6f6;
+}
+
+@property --g-from-percent {
+    syntax: '<percentage>';
+    inherits: false;
+    initial-value: 0%;
+}
+
+@property --g-to-percent {
+    syntax: '<percentage>';
+    inherits: false;
+    initial-value: 100%;
+}
+
+@property --g-angle-speed {
+    syntax: '<time>';
+    inherits: false;
+    initial-value: 0.5s;
+}
+
+@property --g-color-speed {
+    syntax: '<time>';
+    inherits: false;
+    initial-value: 0.5s;
+}
+
+@property --g-percent-speed {
+    syntax: '<time>';
+    inherits: false;
+    initial-value: 0.5s;
+}
+
+@property --transition {
+    syntax: "*";
+    inherits: false;
+    initial-value: none;
+}
+
+@property --anim-color {
+    syntax: '<color>';
+    inherits: false;
+    initial-value: #f6f6f6;
+}
+
+.gradient {
+    --g-angle: 90deg;
+    --g-from-color: #f00;
+    --g-to-color: #00f;
+    --g-from-percent: 0%;
+    --g-to-percent: 100%;
+    --g-angle-speed: 0.5s;
+    --g-color-speed: 0.5s;
+    --g-percent-speed: 0.5s;
+    --transition: none;
+    background: linear-gradient(var(--g-angle), var(--g-from-color) var(--g-from-percent), var(--g-to-color) var(--g-to-percent));
+    transition: --g-angle var(--g-angle-speed), --g-from-color var(--g-color-speed), --g-to-color var(--g-color-speed), --g-from-percent var(--g-percent-speed), --g-to-percent var(--g-percent-speed), var(--transition);
+}
