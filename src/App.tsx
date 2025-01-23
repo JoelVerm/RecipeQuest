@@ -47,18 +47,22 @@ const App: Component = () => {
             .then(files => files.filter(file => file.name.endsWith('.yaml')))
     )
     const [selectedRecipe, _setSelectedRecipe] = createSignal<number | undefined>()
-    createEffect(() => {
-        let files = recipe_files()
+    const selectFromHash = () => {
+        const files = recipe_files()
         if (files != undefined) {
-            let hash = decodeURI(window.location.hash)
+            const hash = decodeURI(window.location.hash)
             if (hash.length > 1) {
-                let index = files.findIndex(file => file.name === hash.slice(1) + '.yaml')
+                const index = files.findIndex(file => file.name === hash.slice(1) + '.yaml')
                 if (index >= 0) {
                     setSelectedRecipe(index)
                 }
+            } else {
+                setSelectedRecipe(undefined)
             }
         }
-    })
+    }
+    createEffect(selectFromHash)
+    addEventListener('hashchange', selectFromHash)
     const setSelectedRecipe = (index: number | undefined) => {
         window.location.hash = recipe_files()?.[index as number]?.name.replace('.yaml', '') ?? ''
         _setSelectedRecipe(index)
